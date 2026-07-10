@@ -10,15 +10,20 @@ build/
 .venv/
 venv/
 
-# 生成数据与模型（不提交）
+# 生成数据（不提交）
 data/raw/
 data/augmented/
 output/
 runs/
-models/
+
+# 预训练模型（不提交，首次运行自动下载）
 yolov8n.pt
+
+# 模型文件（提交 trained models，排除根目录预训练）
 *.pt
+!models/*.pt
 *.onnx
+!models/*.onnx
 
 # IDE
 .idea/
