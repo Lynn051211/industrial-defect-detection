@@ -52,11 +52,3 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build Docker image
         run: docker build -t defect-detector .
-      - name: Verify container
-        continue-on-error: true
-        run: |
-          docker run -d --name test-dd defect-detector || true
-          sleep 10
-          docker logs test-dd --tail 20 || true
-          docker stop test-dd || true
-          docker rm test-dd || true
