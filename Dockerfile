@@ -1,30 +1,35 @@
-# 工业表面缺陷检测系统 Docker 镜像
-# 构建: docker build -t defect-detector .
-# 运行: docker run --rm defect-detector python main.py --inference-only data/raw/val/images/defect_0000.jpg
+# ---- Stage 1: 构建层 ----
+FROM python:3.10-slim AS builder
 
-FROM python:3.10-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir --user -r requirements.txt
 
-# 系统依赖（OpenCV 需要）
+# ---- Stage 2: 运行层 ----
+FROM python:3.10-slim AS runtime
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgl1-mesa-glx \
-    libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
-    libgomp1 \
-    && rm -rf /var/lib/apt/lists/*
+    libgl1-mesa-glx libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --shell /bin/bash appuser
 
 WORKDIR /app
 
-# 先复制依赖文件，利用 Docker 缓存层
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# 从构建层复制已安装的包
+COPY --from=builder /root/.local /home/appuser/.local
+ENV PATH=/home/appuser/.local/bin:$PATH
 
-# 复制全部项目文件
-COPY . .
+# 复制应用代码
+COPY --chown=appuser:appuser . .
 
-# 创建输出目录
-RUN mkdir -p output models data
+# 创建目录
+RUN mkdir -p models data/uploads logs output && chown -R appuser:appuser .
 
-# 默认命令：运行推理（需挂载模型和图像）
-CMD ["python", "main.py", "--inference-only", "data/raw/val/images/defect_0000.jpg"]
+USER appuser
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')" || exit 1
+
+CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

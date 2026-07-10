@@ -33,3 +33,5 @@ Thumbs.db
 # 环境变量
 .env
 .env.local
+logs/
+data/uploads/

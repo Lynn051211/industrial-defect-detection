@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>工业表面缺陷检测系统</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#0f1923;color:#e0e0e0;min-height:100vh;display:flex;flex-direction:column;align-items:center}
+.header{width:100%;background:#1a2a3a;padding:16px 24px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #2a3a4a}
+.header h1{font-size:20px;color:#4ade80}
+.header .version{color:#666;font-size:12px}
+.container{max-width:900px;width:100%;padding:24px}
+.upload-zone{border:2px dashed #2a4a3a;border-radius:12px;padding:40px;text-align:center;cursor:pointer;transition:all .2s;margin-bottom:20px}
+.upload-zone:hover,.upload-zone.drag{border-color:#4ade80;background:rgba(74,222,128,.05)}
+.upload-zone input{display:none}
+.upload-zone .icon{font-size:48px;margin-bottom:12px}
+.upload-zone p{color:#888;margin:4px 0}
+.actions{display:flex;gap:12px;justify-content:center;margin-bottom:20px}
+.actions button{padding:10px 24px;border:none;border-radius:8px;font-size:14px;cursor:pointer;font-weight:600;transition:all .2s}
+.btn-detect{background:#4ade80;color:#000}
+.btn-detect:hover{background:#22c55e}
+.btn-detect:disabled{background:#333;color:#666;cursor:not-allowed}
+.btn-reset{background:#333;color:#eee}
+.btn-reset:hover{background:#444}
+.result{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.result img{width:100%;border-radius:8px;border:2px solid #2a3a4a}
+.stats{background:#1a2a3a;border-radius:8px;padding:16px}
+.stats h3{color:#4ade80;margin-bottom:12px}
+.stat-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #2a3a4a}
+.stat-row:last-child{border-bottom:none}
+.stat-label{color:#999}.stat-value{font-weight:700}
+.detection-item{background:#0f1923;border-radius:6px;padding:10px;margin:6px 0;border-left:3px solid #4ade80}
+.detection-item .cls{font-weight:700;color:#4ade80}
+.detection-item .meta{font-size:12px;color:#888;margin-top:2px}
+.empty{text-align:center;color:#666;padding:20px}
+.spinner{display:none;width:24px;height:24px;border:3px solid #333;border-top-color:#4ade80;border-radius:50%;animation:spin .8s linear infinite;margin:20px auto}
+@keyframes spin{to{transform:rotate(360deg)}}
+.toast{position:fixed;top:20px;right:20px;background:#ef4444;color:#fff;padding:12px 20px;border-radius:8px;display:none;z-index:999}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>工业表面缺陷检测系统</h1>
+  <span class="version" id="ver">v2.0.0</span>
+</div>
+<div class="container">
+  <div class="upload-zone" id="dropZone">
+    <div class="icon">&#128196;</div>
+    <p>点击或拖拽上传金属表面图像</p>
+    <p style="font-size:12px">支持 JPG / PNG / BMP</p>
+    <input type="file" id="fileInput" accept="image/jpeg,image/png,image/bmp">
+  </div>
+  <div class="actions">
+    <button class="btn-detect" id="btnDetect" disabled>开始检测</button>
+    <button class="btn-reset" id="btnReset">清空重来</button>
+  </div>
+  <div class="spinner" id="spinner"></div>
+  <div class="result" id="result" style="display:none">
+    <div>
+      <h3 style="color:#4ade80;margin-bottom:8px">原始图像</h3>
+      <img id="imgOriginal" alt="原始图像">
+    </div>
+    <div>
+      <h3 style="color:#4ade80;margin-bottom:8px">检测结果</h3>
+      <img id="imgResult" alt="检测结果">
+    </div>
+    <div class="stats" style="grid-column:1/-1">
+      <h3>检测详情</h3>
+      <div class="stat-row"><span class="stat-label">推理耗时</span><span class="stat-value" id="statTime">-</span></div>
+      <div class="stat-row"><span class="stat-label">缺陷数量</span><span class="stat-value" id="statCount">-</span></div>
+      <div id="detections"></div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+const btnDetect = document.getElementById('btnDetect');
+const btnReset = document.getElementById('btnReset');
+const spinner = document.getElementById('spinner');
+const resultDiv = document.getElementById('result');
+let selectedFile = null;
+
+dropZone.addEventListener('click',()=>fileInput.click());
+dropZone.addEventListener('dragover',e=>{e.preventDefault();dropZone.classList.add('drag')});
+dropZone.addEventListener('dragleave',()=>dropZone.classList.remove('drag'));
+dropZone.addEventListener('drop',e=>{
+  e.preventDefault();
+  dropZone.classList.remove('drag');
+  if(e.dataTransfer.files.length){handleFile(e.dataTransfer.files[0])}
+});
+fileInput.addEventListener('change',()=>{if(fileInput.files.length)handleFile(fileInput.files[0])});
+
+function handleFile(file){
+  if(!file.type.startsWith('image/')){toast('请上传图像文件');return}
+  selectedFile=file;
+  btnDetect.disabled=false;
+  const reader=new FileReader();
+  reader.onload=e=>{document.getElementById('imgOriginal').src=e.target.result}
+  reader.readAsDataURL(file);
+  resultDiv.style.display='grid';
+}
+
+btnDetect.addEventListener('click',async()=>{
+  if(!selectedFile)return;
+  btnDetect.disabled=true;
+  spinner.style.display='block';
+  const form=new FormData();
+  form.append('file',selectedFile);
+  form.append('benchmark','true');
+  try{
+    const r=await fetch('/api/v1/detect',{method:'POST',body:form});
+    const data=await r.json();
+    if(!data.success){toast('检测失败');return}
+    document.getElementById('statTime').textContent=data.inference_time_ms+' ms';
+    document.getElementById('statCount').textContent=data.num_detections;
+    if(data.result_image){
+      document.getElementById('imgResult').src=data.result_image+'?t='+Date.now();
+    }
+    const detDiv=document.getElementById('detections');
+    if(data.detections.length===0){
+      detDiv.innerHTML='<div class="empty">未检测到缺陷</div>';
+    }else{
+      detDiv.innerHTML=data.detections.map(d=>
+        `<div class="detection-item">
+          <span class="cls">${d.class_zh} (${d.class})</span>
+          <div class="meta">置信度: ${(d.confidence*100).toFixed(1)}% | bbox: [${d.bbox.join(', ')}]</div>
+        </div>`
+      ).join('');
+    }
+  }catch(e){toast('请求失败: '+e.message)}
+  finally{btnDetect.disabled=false;spinner.style.display='none'}
+});
+
+btnReset.addEventListener('click',()=>{
+  selectedFile=null;
+  fileInput.value='';
+  btnDetect.disabled=true;
+  resultDiv.style.display='none';
+  document.getElementById('detections').innerHTML='';
+});
+
+function toast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg;t.style.display='block';
+  setTimeout(()=>t.style.display='none',3000);
+}
+
+fetch('/api/v1/health').then(r=>r.json()).then(d=>{
+  document.getElementById('ver').textContent='v2.0.0 | '+d.status;
+});
+</script>
+</body>
+</html>

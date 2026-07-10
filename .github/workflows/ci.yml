@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('requirements*.txt') }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Check model exists
+        run: |
+          if [ ! -f models/defect_detector.onnx ]; then
+            echo "模型文件不存在，从训练生成..."
+            python scripts/generate_data.py
+            python scripts/train.py
+            python scripts/export_onnx.py
+          fi
+
+      - name: Run tests
+        run: pytest tests/ -v --tb=short --timeout=120
+
+      - name: Lint check
+        run: ruff check app/ scripts/ tests/ --ignore=E501,E402 2>/dev/null || true
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image
+        run: docker build -t defect-detector .
+      - name: Verify container starts
+        run: |
+          docker run --rm -d --name test-dd defect-detector
+          sleep 10
+          docker exec test-dd python -c "import urllib.request; r=urllib.request.urlopen('http://localhost:8000/api/v1/health'); print(r.read())"
+          docker stop test-dd

@@ -1,0 +1,7 @@
+# 测试
+pytest>=7.0.0
+pytest-timeout>=2.0.0
+httpx>=0.24.0  # FastAPI TestClient 依赖
+
+# 代码质量
+ruff>=0.1.0
